@@ -1,0 +1,58 @@
+version: 2
+
+models:
+
+  - name: mart_city_mobility_overview
+    description: "Daily city-level mobility and revenue overview."
+
+    columns:
+
+      - name: trip_date
+        tests:
+          - not_null
+          - unique
+
+
+  - name: mart_peak_demand_analysis
+    description: "Taxi demand analysis by date and pickup hour."
+
+    columns:
+
+      - name: trip_date
+        tests:
+          - not_null
+
+      - name: pickup_hour
+        tests:
+          - not_null
+
+
+  - name: mart_location_demand
+    description: "Location-level taxi demand and mobility analysis."
+
+    columns:
+
+      - name: location_id
+        tests:
+          - not_null
+          - unique
+
+
+  - name: mart_trip_efficiency
+    description: "Taxi trip efficiency analysis by trip categories."
+
+    columns:
+
+      - name: trip_distance_category
+        tests:
+          - not_null
+
+
+  - name: mart_revenue_passenger_analysis
+    description: "Revenue and passenger analysis by passenger count and payment type."
+
+    columns:
+
+      - name: passenger_count
+        tests:
+          - not_null

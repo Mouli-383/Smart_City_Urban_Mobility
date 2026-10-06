@@ -1,0 +1,43 @@
+version: 2
+
+models:
+
+  - name: staging_yellow_trips_data
+    description: "Cleaned and standardized Yellow Taxi trip data."
+
+    columns:
+
+      - name: pickup_datetime
+        tests:
+          - not_null
+
+      - name: dropoff_datetime
+        tests:
+          - not_null
+
+      - name: pickup_location_id
+        tests:
+          - not_null
+
+      - name: dropoff_location_id
+        tests:
+          - not_null
+
+
+  - name: stg_locations
+    description: "Cleaned and standardized taxi location lookup data."
+
+    columns:
+
+      - name: location_id
+        tests:
+          - not_null
+          - unique
+
+      - name: borough
+        tests:
+          - not_null
+
+      - name: zone
+        tests:
+          - not_null

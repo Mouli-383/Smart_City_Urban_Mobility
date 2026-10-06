@@ -1,0 +1,35 @@
+version: 2
+
+models:
+
+  - name: int_trip_metrics
+    description: "Trip-level analytical metrics derived from cleaned taxi trip data."
+
+    columns:
+
+      - name: pickup_datetime
+        tests:
+          - not_null
+
+      - name: trip_date
+        tests:
+          - not_null
+
+      - name: pickup_location_id
+        tests:
+          - not_null
+
+      - name: dropoff_location_id
+        tests:
+          - not_null
+
+
+  - name: int_location_activity
+    description: "Location-level mobility activity including pickups and dropoffs."
+
+    columns:
+
+      - name: location_id
+        tests:
+          - not_null
+          - unique
