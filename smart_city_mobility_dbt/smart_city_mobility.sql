@@ -1,0 +1,563 @@
+SELECT CURRENT_USER();
+SELECT CURRENT_ROLE();
+SELECT CURRENT_WAREHOUSE();
+SELECT CURRENT_DATABASE();
+SELECT CURRENT_SCHEMA();
+
+
+-- ============================================
+-- SMART CITY URBAN MOBILITY INTELLIGENCE
+-- PHASE 4 - SNOWFLAKE SETUP
+-- STEP 1: DATABASE AND SCHEMA SETUP
+-- ============================================
+
+-- Create project database
+CREATE DATABASE IF NOT EXISTS SMART_CITY_MOBILITY_DB;
+
+-- Select project database
+USE DATABASE SMART_CITY_MOBILITY_DB;
+
+-- Create schemas for different data layers
+CREATE SCHEMA IF NOT EXISTS RAW;
+CREATE SCHEMA IF NOT EXISTS STAGING;
+CREATE SCHEMA IF NOT EXISTS ANALYTICS;
+
+-- Select RAW schema
+USE SCHEMA RAW;
+
+-- Verify current Snowflake context
+SELECT
+    CURRENT_USER(),
+    CURRENT_ROLE(),
+    CURRENT_WAREHOUSE(),
+    CURRENT_DATABASE(),
+    CURRENT_SCHEMA();
+
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+-- ============================================
+-- 1. CREATE CSV FILE FORMAT
+-- ============================================
+
+CREATE OR REPLACE FILE FORMAT TAXI_CSV_FORMAT
+    TYPE = CSV
+    FIELD_DELIMITER = ','
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    NULL_IF = ('', 'NULL', 'null');
+
+
+-- ============================================
+-- 2. CREATE INTERNAL STAGE
+-- ============================================
+
+CREATE OR REPLACE STAGE TAXI_RAW_STAGE
+    FILE_FORMAT = TAXI_CSV_FORMAT;
+
+
+-- ============================================
+-- 3. CREATE RAW TAXI TRIPS TABLE
+-- ============================================
+
+CREATE OR REPLACE TABLE YELLOW_TAXI_TRIPS (
+    TRIP_ID NUMBER(38,0),
+    VENDOR_ID NUMBER(38,0),
+    PICKUP_DATETIME TIMESTAMP_NTZ,
+    DROPOFF_DATETIME TIMESTAMP_NTZ,
+    PASSENGER_COUNT FLOAT,
+    TRIP_DISTANCE FLOAT,
+    RATECODE_ID FLOAT,
+    PICKUP_LOCATION_ID NUMBER(38,0),
+    DROPOFF_LOCATION_ID NUMBER(38,0),
+    PAYMENT_TYPE NUMBER(38,0),
+    FARE_AMOUNT FLOAT,
+    EXTRA FLOAT,
+    MTA_TAX FLOAT,
+    TIP_AMOUNT FLOAT,
+    TOLLS_AMOUNT FLOAT,
+    IMPROVEMENT_SURCHARGE FLOAT,
+    TOTAL_AMOUNT FLOAT,
+    CONGESTION_SURCHARGE FLOAT,
+    AIRPORT_FEE FLOAT,
+    CBD_CONGESTION_FEE FLOAT,
+    TRIP_DURATION_MINUTES FLOAT,
+    TRIP_DATE DATE,
+    PICKUP_HOUR NUMBER(38,0)
+);
+
+CREATE OR REPLACE TABLE RAW.LOCATIONS (
+
+    LOCATION_ID NUMBER(38,0),
+
+    BOROUGH VARCHAR(100),
+
+    ZONE VARCHAR(255),
+
+    SERVICE_ZONE VARCHAR(100)
+
+);
+
+
+-- ============================================
+-- 4. VERIFY CREATED OBJECTS
+-- ============================================
+
+SHOW FILE FORMATS;
+
+SHOW STAGES;
+
+DESCRIBE TABLE YELLOW_TAXI_TRIPS;
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+COPY INTO YELLOW_TAXI_TRIPS
+FROM @TAXI_RAW_STAGE
+FILE_FORMAT = (FORMAT_NAME = TAXI_CSV_FORMAT)
+ON_ERROR = 'CONTINUE';
+
+SELECT COUNT(*) AS TOTAL_RAW_RECORDS
+FROM YELLOW_TAXI_TRIPS;
+
+SELECT
+    YEAR(TRIP_DATE) AS TRIP_YEAR,
+    MONTH(TRIP_DATE) AS TRIP_MONTH,
+    COUNT(*) AS TOTAL_TRIPS
+FROM YELLOW_TAXI_TRIPS
+GROUP BY
+    YEAR(TRIP_DATE),
+    MONTH(TRIP_DATE)
+ORDER BY
+    TRIP_YEAR,
+    TRIP_MONTH;
+
+
+SELECT
+    COUNT(*) AS TOTAL_RECORDS,
+
+    COUNT_IF(VENDOR_ID IS NULL) AS VENDOR_ID_NULLS,
+
+    COUNT_IF(PICKUP_DATETIME IS NULL) AS PICKUP_DATETIME_NULLS,
+
+    COUNT_IF(DROPOFF_DATETIME IS NULL) AS DROPOFF_DATETIME_NULLS,
+
+    COUNT_IF(PICKUP_LOCATION_ID IS NULL) AS PICKUP_LOCATION_NULLS,
+
+    COUNT_IF(DROPOFF_LOCATION_ID IS NULL) AS DROPOFF_LOCATION_NULLS
+FROM YELLOW_TAXI_TRIPS;
+
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+LIST @TAXI_STAGE;
+
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+SHOW STAGES;
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+LIST @TAXI_RAW_STAGE;
+
+
+
+
+
+
+
+-- ============================================================
+-- SMART CITY URBAN MOBILITY INTELLIGENCE
+-- PHASE: SNOWFLAKE RAW DATA VALIDATION
+-- ============================================================
+
+
+-- ============================================================
+-- STEP 0: SET DATABASE AND SCHEMA
+-- ============================================================
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+
+USE SCHEMA RAW;
+
+
+-- ============================================================
+-- STEP 1: TOTAL ROW COUNT VALIDATION
+-- ============================================================
+
+SELECT
+    COUNT(*) AS TOTAL_RECORDS
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 2: CHECK TRIP_ID UNIQUENESS
+-- ============================================================
+
+SELECT
+    COUNT(*) AS TOTAL_RECORDS,
+    COUNT(TRIP_ID) AS NON_NULL_TRIP_IDS,
+    COUNT(DISTINCT TRIP_ID) AS DISTINCT_TRIP_IDS,
+    COUNT(*) - COUNT(DISTINCT TRIP_ID) AS POTENTIAL_DUPLICATE_TRIP_IDS
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 3: CHECK COMPLETE DUPLICATE ROWS
+-- ============================================================
+-- This checks whether exact duplicate records exist.
+-- We will primarily use TRIP_ID for downstream uniqueness.
+
+SELECT
+    TRIP_ID,
+    COUNT(*) AS DUPLICATE_COUNT
+FROM YELLOW_TAXI_TRIPS
+GROUP BY TRIP_ID
+HAVING COUNT(*) > 1
+ORDER BY DUPLICATE_COUNT DESC
+LIMIT 100;
+
+
+-- ============================================================
+-- STEP 4: NULL VALUE VALIDATION
+-- ============================================================
+
+SELECT
+
+    COUNT(*) AS TOTAL_RECORDS,
+
+    COUNT_IF(TRIP_ID IS NULL) AS TRIP_ID_NULLS,
+
+    COUNT_IF(VENDOR_ID IS NULL) AS VENDOR_ID_NULLS,
+
+    COUNT_IF(PICKUP_DATETIME IS NULL) AS PICKUP_DATETIME_NULLS,
+
+    COUNT_IF(DROPOFF_DATETIME IS NULL) AS DROPOFF_DATETIME_NULLS,
+
+    COUNT_IF(PASSENGER_COUNT IS NULL) AS PASSENGER_COUNT_NULLS,
+
+    COUNT_IF(TRIP_DISTANCE IS NULL) AS TRIP_DISTANCE_NULLS,
+
+    COUNT_IF(PAYMENT_TYPE IS NULL) AS PAYMENT_TYPE_NULLS,
+
+    COUNT_IF(FARE_AMOUNT IS NULL) AS FARE_AMOUNT_NULLS,
+
+    COUNT_IF(TIP_AMOUNT IS NULL) AS TIP_AMOUNT_NULLS,
+
+    COUNT_IF(TOTAL_AMOUNT IS NULL) AS TOTAL_AMOUNT_NULLS
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 5: VALIDATE DATE RANGE
+-- ============================================================
+
+SELECT
+
+    MIN(PICKUP_DATETIME) AS FIRST_PICKUP_DATETIME,
+
+    MAX(PICKUP_DATETIME) AS LAST_PICKUP_DATETIME,
+
+    MIN(DROPOFF_DATETIME) AS FIRST_DROPOFF_DATETIME,
+
+    MAX(DROPOFF_DATETIME) AS LAST_DROPOFF_DATETIME
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 6: MONTHLY DATA DISTRIBUTION
+-- ============================================================
+
+SELECT
+
+    DATE_TRUNC(
+        'MONTH',
+        PICKUP_DATETIME
+    ) AS TRIP_MONTH,
+
+    COUNT(*) AS TOTAL_TRIPS
+
+FROM YELLOW_TAXI_TRIPS
+
+GROUP BY 1
+
+ORDER BY 1;
+
+
+-- ============================================================
+-- STEP 7: CHECK INVALID PICKUP/DROPOFF DATETIMES
+-- ============================================================
+
+SELECT
+
+    COUNT(*) AS INVALID_DATETIME_RECORDS
+
+FROM YELLOW_TAXI_TRIPS
+
+WHERE
+
+    DROPOFF_DATETIME < PICKUP_DATETIME;
+
+
+-- ============================================================
+-- STEP 8: CHECK ZERO OR NEGATIVE TRIP DISTANCE
+-- ============================================================
+
+SELECT
+
+    COUNT(*) AS INVALID_TRIP_DISTANCE_RECORDS,
+
+    MIN(TRIP_DISTANCE) AS MIN_TRIP_DISTANCE,
+
+    MAX(TRIP_DISTANCE) AS MAX_TRIP_DISTANCE
+
+FROM YELLOW_TAXI_TRIPS
+
+WHERE
+
+    TRIP_DISTANCE <= 0;
+
+
+-- ============================================================
+-- STEP 9: CHECK PASSENGER COUNT VALIDITY
+-- ============================================================
+
+SELECT
+
+    PASSENGER_COUNT,
+
+    COUNT(*) AS TOTAL_RECORDS
+
+FROM YELLOW_TAXI_TRIPS
+
+GROUP BY PASSENGER_COUNT
+
+ORDER BY PASSENGER_COUNT;
+
+
+-- ============================================================
+-- STEP 10: CHECK NEGATIVE FINANCIAL VALUES
+-- ============================================================
+
+SELECT
+
+    COUNT_IF(FARE_AMOUNT < 0) AS NEGATIVE_FARE_AMOUNT,
+
+    COUNT_IF(EXTRA < 0) AS NEGATIVE_EXTRA_AMOUNT,
+
+    COUNT_IF(MTA_TAX < 0) AS NEGATIVE_MTA_TAX,
+
+    COUNT_IF(TIP_AMOUNT < 0) AS NEGATIVE_TIP_AMOUNT,
+
+    COUNT_IF(TOLLS_AMOUNT < 0) AS NEGATIVE_TOLLS_AMOUNT,
+
+    COUNT_IF(IMPROVEMENT_SURCHARGE < 0)
+        AS NEGATIVE_IMPROVEMENT_SURCHARGE,
+
+    COUNT_IF(TOTAL_AMOUNT < 0)
+        AS NEGATIVE_TOTAL_AMOUNT
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 11: CHECK PAYMENT TYPE DISTRIBUTION
+-- ============================================================
+
+SELECT
+
+    PAYMENT_TYPE,
+
+    COUNT(*) AS TOTAL_TRIPS
+
+FROM YELLOW_TAXI_TRIPS
+
+GROUP BY PAYMENT_TYPE
+
+ORDER BY PAYMENT_TYPE;
+
+
+-- ============================================================
+-- STEP 12: CHECK TRIP DISTANCE STATISTICS
+-- ============================================================
+
+SELECT
+
+    MIN(TRIP_DISTANCE) AS MIN_DISTANCE,
+
+    MAX(TRIP_DISTANCE) AS MAX_DISTANCE,
+
+    AVG(TRIP_DISTANCE) AS AVG_DISTANCE,
+
+    MEDIAN(TRIP_DISTANCE) AS MEDIAN_DISTANCE
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 13: CHECK TRIP DURATION STATISTICS
+-- ============================================================
+
+SELECT
+
+    MIN(
+        DATEDIFF(
+            'MINUTE',
+            PICKUP_DATETIME,
+            DROPOFF_DATETIME
+        )
+    ) AS MIN_DURATION_MINUTES,
+
+    MAX(
+        DATEDIFF(
+            'MINUTE',
+            PICKUP_DATETIME,
+            DROPOFF_DATETIME
+        )
+    ) AS MAX_DURATION_MINUTES,
+
+    AVG(
+        DATEDIFF(
+            'MINUTE',
+            PICKUP_DATETIME,
+            DROPOFF_DATETIME
+        )
+    ) AS AVG_DURATION_MINUTES
+
+FROM YELLOW_TAXI_TRIPS
+
+WHERE
+
+    PICKUP_DATETIME IS NOT NULL
+
+    AND DROPOFF_DATETIME IS NOT NULL;
+
+
+-- ============================================================
+-- STEP 14: CHECK ZERO OR NEGATIVE TRIP DURATION
+-- ============================================================
+
+SELECT
+
+    COUNT(*) AS INVALID_TRIP_DURATION_RECORDS
+
+FROM YELLOW_TAXI_TRIPS
+
+WHERE
+
+    DROPOFF_DATETIME <= PICKUP_DATETIME;
+
+
+-- ============================================================
+-- STEP 15: CHECK FINANCIAL SUMMARY
+-- ============================================================
+
+SELECT
+
+    ROUND(SUM(FARE_AMOUNT), 2) AS TOTAL_FARE_AMOUNT,
+
+    ROUND(SUM(TIP_AMOUNT), 2) AS TOTAL_TIP_AMOUNT,
+
+    ROUND(SUM(TOTAL_AMOUNT), 2) AS TOTAL_REVENUE,
+
+    ROUND(AVG(FARE_AMOUNT), 2) AS AVG_FARE_AMOUNT,
+
+    ROUND(AVG(TIP_AMOUNT), 2) AS AVG_TIP_AMOUNT,
+
+    ROUND(AVG(TOTAL_AMOUNT), 2) AS AVG_TOTAL_AMOUNT
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 16: CHECK LOCATION ID VALIDITY
+-- ============================================================
+
+SELECT
+
+    COUNT_IF(PICKUP_LOCATION_ID IS NULL)
+        AS PICKUP_LOCATION_NULLS,
+
+    COUNT_IF(DROPOFF_LOCATION_ID IS NULL)
+        AS DROPOFF_LOCATION_NULLS,
+
+    COUNT_IF(PICKUP_LOCATION_ID <= 0)
+        AS INVALID_PICKUP_LOCATION_IDS,
+
+    COUNT_IF(DROPOFF_LOCATION_ID <= 0)
+        AS INVALID_DROPOFF_LOCATION_IDS
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+-- ============================================================
+-- STEP 17: FINAL RAW DATA SUMMARY
+-- ============================================================
+
+SELECT
+
+    COUNT(*) AS TOTAL_RECORDS,
+
+    COUNT(DISTINCT TRIP_ID) AS UNIQUE_TRIPS,
+
+    MIN(PICKUP_DATETIME) AS FIRST_TRIP,
+
+    MAX(PICKUP_DATETIME) AS LAST_TRIP,
+
+    ROUND(SUM(TOTAL_AMOUNT), 2) AS TOTAL_REVENUE
+
+FROM YELLOW_TAXI_TRIPS;
+
+
+
+
+
+USE DATABASE SMART_CITY_MOBILITY_DB;
+USE SCHEMA RAW;
+
+DESC TABLE YELLOW_TAXI_TRIPS;
+
+
+SHOW TABLES IN SCHEMA SMART_CITY_MOBILITY_DB.RAW;
+
+
+SHOW TABLES IN SCHEMA SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS;
+
+MART_CITY_MOBILITY_OVERVIEW
+MART_LOCATION_DEMAND
+MART_PEAK_DEMAND_ANALYSIS
+MART_REVENUE_PASSENGER_ANALYSIS
+MART_TRIP_EFFICIENCY
+
+
+
+SELECT * FROM SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_TRIP_EFFICIENCY;
+
+DESC TABLE SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_LOCATION_DEMAND;
+
+DESC TABLE SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_PEAK_DEMAND_ANALYSIS;
+
+DESC TABLE SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_TRIP_EFFICIENCY;
+
+
+SELECT *
+FROM SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_LOCATION_DEMAND
+ORDER BY TOTAL_PICKUPS DESC
+LIMIT 10;
+
+SELECT *
+FROM SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_PEAK_DEMAND_ANALYSIS
+ORDER BY TOTAL_TRIPS DESC
+LIMIT 10;
+
+SELECT *
+FROM SMART_CITY_MOBILITY_DB.STAGING_ANALYTICS.MART_TRIP_EFFICIENCY
+ORDER BY TOTAL_TRIPS DESC
+LIMIT 10;
